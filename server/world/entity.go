@@ -448,6 +448,15 @@ type TickerEntity interface {
 	Tick(tx *Tx, current int64)
 }
 
+// UnloadedTickerEntity represents a TickerEntity that does not depend on its
+// current chunk being loaded. Such entities continue ticking while travelling
+// through unloaded chunks.
+type UnloadedTickerEntity interface {
+	TickerEntity
+	// TickUnloaded marks the entity as safe to tick in an unloaded chunk.
+	TickUnloaded()
+}
+
 // EntityAction represents an action that may be performed by an Entity. Typically, these actions are sent to
 // viewers in a world so that they can see these actions.
 type EntityAction interface {

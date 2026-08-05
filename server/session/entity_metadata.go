@@ -30,6 +30,9 @@ func (s *Session) parseEntityMetadata(e world.Entity) protocol.EntityMetadata {
 
 	m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagHasGravity)
 	m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagClimb)
+	if g, ok := e.(gravity); ok && !g.HasGravity() {
+		m.UnsetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagHasGravity)
+	}
 	if g, ok := e.H().Type().(glint); ok && g.Glint() {
 		m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagEnchanted)
 	}
@@ -74,6 +77,15 @@ func (s *Session) addSpecificMetadata(e any, m protocol.EntityMetadata) {
 	}
 	if i, ok := e.(immobile); ok && i.Immobile() {
 		m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagNoAI)
+	}
+	if silentEntity, ok := e.(silent); ok && silentEntity.Silent() {
+		m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagSilent)
+	}
+	if r, ok := e.(rider); ok {
+		if seatOffset, riding := r.RiderSeatOffset(); riding {
+			m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagRiding)
+			m[protocol.EntityDataKeySeatOffset] = vec64To32(seatOffset)
+		}
 	}
 	if o, ok := e.(onFire); ok && o.OnFireDuration() > 0 {
 		m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagOnFire)
@@ -254,6 +266,18 @@ type breather interface {
 
 type immobile interface {
 	Immobile() bool
+}
+
+type gravity interface {
+	HasGravity() bool
+}
+
+type silent interface {
+	Silent() bool
+}
+
+type rider interface {
+	RiderSeatOffset() (mgl64.Vec3, bool)
 }
 
 type invisible interface {

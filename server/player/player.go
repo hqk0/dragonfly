@@ -110,6 +110,9 @@ type playerData struct {
 	once sync.Once
 
 	prevWorld *world.World
+
+	vehicle    *world.EntityHandle
+	seatOffset mgl64.Vec3
 }
 
 // Player is an implementation of a player entity. It has methods that implement the behaviour that players
@@ -127,6 +130,73 @@ func (p *Player) H() *world.EntityHandle {
 
 func (p *Player) Tx() *world.Tx {
 	return p.tx
+}
+
+type entityMountViewer interface {
+	ViewEntityMount(vehicle, rider world.Entity)
+	ViewEntityDismount(vehicle, rider world.Entity)
+}
+
+type riderSeatVehicle interface {
+	ReleaseRider(rider world.Entity)
+}
+
+// Mount links the player to vehicle at the seat offset passed. The player is
+// mounted as a passenger and cannot control the vehicle.
+func (p *Player) Mount(vehicle world.Entity, seatOffset mgl64.Vec3) bool {
+	if vehicle == nil || vehicle.H() == p.handle || vehicle.H().Closed() {
+		return false
+	}
+	if p.vehicle == vehicle.H() {
+		p.seatOffset = seatOffset
+		p.updateState()
+		return true
+	}
+	p.Dismount()
+	p.vehicle, p.seatOffset = vehicle.H(), seatOffset
+	p.updateState()
+	for _, viewer := range p.viewers() {
+		if mountViewer, ok := viewer.(entityMountViewer); ok {
+			mountViewer.ViewEntityMount(vehicle, p)
+		}
+	}
+	return true
+}
+
+// Dismount removes the player's current vehicle link.
+func (p *Player) Dismount() {
+	if p.vehicle == nil {
+		return
+	}
+	vehicleHandle := p.vehicle
+	if vehicle, ok := vehicleHandle.Entity(p.tx); ok {
+		for _, viewer := range p.viewers() {
+			if mountViewer, ok := viewer.(entityMountViewer); ok {
+				mountViewer.ViewEntityDismount(vehicle, p)
+			}
+		}
+		if seatVehicle, ok := vehicle.(riderSeatVehicle); ok {
+			seatVehicle.ReleaseRider(p)
+		}
+	}
+	p.vehicle, p.seatOffset = nil, mgl64.Vec3{}
+	p.updateState()
+}
+
+// RiderSeatOffset returns the position of the current seat relative to the
+// vehicle.
+func (p *Player) RiderSeatOffset() (mgl64.Vec3, bool) {
+	return p.seatOffset, p.vehicle != nil && !p.vehicle.Closed()
+}
+
+// RidingVehicle returns the vehicle that the player is currently riding.
+func (p *Player) RidingVehicle() (*world.EntityHandle, bool) {
+	return p.vehicle, p.vehicle != nil && !p.vehicle.Closed()
+}
+
+// Silent suppresses movement sounds while the player is riding a vehicle.
+func (p *Player) Silent() bool {
+	return p.vehicle != nil && !p.vehicle.Closed()
 }
 
 // Name returns the username of the player. If the player is controlled by a client, it is the username of
@@ -3334,6 +3404,7 @@ func (p *Player) close(msg string) {
 }
 
 func (p *Player) quit(msg string) {
+	p.Dismount()
 	p.h.HandleQuit(p)
 	p.h = NopHandler{}
 

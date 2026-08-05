@@ -2,6 +2,7 @@ package world
 
 import (
 	"context"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -124,6 +125,68 @@ func TestSynchronousAdvanceTickTicksViewerlessEntities(t *testing.T) {
 	}
 }
 
+func TestUnloadedTickerEntityTicksWithoutCurrentChunk(t *testing.T) {
+	w := Config{Synchronous: true}.New()
+	defer w.Close()
+
+	h := EntitySpawnOpts{Position: mgl64.Vec3{0, 4, 0}}.New(testEntityType{}, testEntityConfig{})
+	viewer := &entityRecordingViewer{}
+	loader := &Loader{viewer: viewer}
+	<-w.exec(func(tx *Tx) {
+		tx.AddEntity(h)
+		tx.World().addViewer(tx, tx.World().chunks[ChunkPos{0, 0}], loader)
+		h.data.Pos = mgl64.Vec3{32, 4, 0}
+	})
+
+	start := h.data.Pos
+	w.AdvanceTick()
+	if got := h.data.Pos; got == start {
+		t.Fatalf("expected unloaded ticker entity position to change, got %v", got)
+	}
+	<-w.exec(func(tx *Tx) {
+		currentPos := chunkPosFromVec3(h.data.Pos)
+		if tx.World().entities[h] != currentPos {
+			t.Fatal("unloaded ticker entity membership did not follow its position")
+		}
+		old := tx.World().chunks[ChunkPos{0, 0}]
+		if slices.Index(old.Entities, h) != -1 {
+			t.Fatal("unloaded ticker entity remained attached to its old chunk")
+		}
+		current := tx.chunk(currentPos)
+		tx.World().addViewer(tx, current, loader)
+		ticker{}.tickEntities(tx, 2)
+		if tx.World().entities[h] != currentPos ||
+			slices.Index(current.Entities, h) == -1 {
+			t.Fatal("unloaded ticker entity was not reattached after its current chunk loaded")
+		}
+	})
+	if viewer.hidden != 1 || viewer.shown != 2 {
+		t.Fatalf(
+			"expected hide while unloaded and fresh show after reattach, got shown=%d hidden=%d",
+			viewer.shown, viewer.hidden,
+		)
+	}
+}
+
+func TestUnloadedTickerEntityTicksInViewerlessChunk(t *testing.T) {
+	w := Config{Synchronous: true}.New()
+	defer w.Close()
+
+	h := EntitySpawnOpts{Position: mgl64.Vec3{0, 4, 0}}.New(testEntityType{}, testEntityConfig{})
+	start := h.data.Pos
+	<-w.exec(func(tx *Tx) {
+		tx.AddEntity(h)
+		start = h.data.Pos
+		tx.World().conf.Synchronous = false
+		ticker{}.tickEntities(tx, 1)
+		tx.World().conf.Synchronous = true
+	})
+
+	if got := h.data.Pos; got == start {
+		t.Fatalf("expected viewerless unloaded ticker entity position to change, got %v", got)
+	}
+}
+
 func TestSynchronousAdvanceTickTicksViewerlessBlockEntities(t *testing.T) {
 	w := Config{Synchronous: true}.New()
 	defer w.Close()
@@ -147,6 +210,15 @@ func TestSynchronousAdvanceTickTicksViewerlessBlockEntities(t *testing.T) {
 }
 
 type testEntityConfig struct{}
+
+type entityRecordingViewer struct {
+	NopViewer
+	shown  int
+	hidden int
+}
+
+func (v *entityRecordingViewer) ViewEntity(Entity) { v.shown++ }
+func (v *entityRecordingViewer) HideEntity(Entity) { v.hidden++ }
 
 func (testEntityConfig) Apply(*EntityData) {}
 
@@ -194,6 +266,8 @@ func (e *testEntity) Rotation() cube.Rotation {
 func (e *testEntity) Tick(*Tx, int64) {
 	e.data.Pos = e.data.Pos.Add(mgl64.Vec3{0, -0.1, 0})
 }
+
+func (*testEntity) TickUnloaded() {}
 
 type testTickerBlock struct {
 	ticks int

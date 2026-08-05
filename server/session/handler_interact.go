@@ -16,6 +16,10 @@ func (h *InteractHandler) Handle(p packet.Packet, s *Session, _ *world.Tx, c Con
 	pos := c.Position()
 
 	switch pk.ActionType {
+	case packet.InteractActionLeaveVehicle:
+		if rider, ok := c.(interface{ Dismount() }); ok {
+			rider.Dismount()
+		}
 	case packet.InteractActionMouseOverEntity:
 		// We don't need this action.
 	case packet.InteractActionOpenInventory:

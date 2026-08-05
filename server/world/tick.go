@@ -216,6 +216,18 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 
 		c, ok := tx.World().chunks[chunkPos]
 		if !ok {
+			if lastPos != chunkPos {
+				if old, ok := tx.World().chunks[lastPos]; ok {
+					old.Entities = sliceutil.DeleteVal(old.Entities, handle)
+					for _, viewer := range old.viewers {
+						viewer.HideEntity(e)
+					}
+				}
+				tx.World().entities[handle] = chunkPos
+			}
+			if te, ok := e.(UnloadedTickerEntity); ok {
+				te.Tick(tx, tick)
+			}
 			continue
 		}
 
@@ -249,9 +261,16 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 					showEntity(e, viewer)
 				}
 			}
+		} else if slices.Index(c.Entities, handle) == -1 {
+			c.Entities = append(c.Entities, handle)
+			for _, viewer := range c.viewers {
+				showEntity(e, viewer)
+			}
 		}
 
-		if tx.World().conf.Synchronous || len(c.viewers) > 0 {
+		_, tickUnloaded := e.(UnloadedTickerEntity)
+		if tx.World().conf.Synchronous || len(c.viewers) > 0 ||
+			tickUnloaded {
 			if te, ok := e.(TickerEntity); ok {
 				te.Tick(tx, tick)
 			}

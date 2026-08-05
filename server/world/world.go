@@ -1211,7 +1211,13 @@ func (w *World) closeChunk(tx *Tx, pos ChunkPos, c *Column) {
 	// themselves from the world in their Close method, which can lead to
 	// unexpected conditions.
 	for _, e := range slices.Clone(c.Entities) {
-		_ = e.mustEntity(tx).Close()
+		// Closing a parent entity may also remove child entities captured in the
+		// cloned slice (for example a train removes its rendered cars). Skip
+		// handles that have already been removed instead of reopening them with a
+		// transaction for a world they no longer belong to.
+		if entity, ok := e.Entity(tx); ok {
+			_ = entity.Close()
+		}
 	}
 	clear(c.Entities)
 	delete(w.chunks, pos)

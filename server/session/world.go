@@ -114,6 +114,7 @@ func (s *Session) ViewEntity(e world.Entity) {
 		} else {
 			s.ViewSkin(e)
 		}
+		s.viewEntityMounts(e)
 		return
 	case *entity.Ent:
 		switch e.H().Type() {
@@ -126,6 +127,7 @@ func (s *Session) ViewEntity(e world.Entity) {
 				Velocity:        vec64To32(v.Velocity()),
 				EntityMetadata:  metadata,
 			})
+			s.viewEntityMounts(e)
 			return
 		case entity.TextType:
 			metadata[protocol.EntityDataKeyVariant] = int32(s.br.BlockRuntimeID(block.Air{}))
@@ -154,6 +156,7 @@ func (s *Session) ViewEntity(e world.Entity) {
 		HeadYaw:         float32(yaw),
 		BodyYaw:         float32(yaw),
 	})
+	s.viewEntityMounts(e)
 }
 
 // ViewEntityGameMode ...
@@ -198,6 +201,60 @@ func (s *Session) ViewEntityMovement(e world.Entity, pos mgl64.Vec3, rot cube.Ro
 		return
 	}
 	s.viewEntityAbsoluteMovement(id, e, pos, rot, onGround, false)
+}
+
+// ViewEntityMount links rider to vehicle as a non-controlling passenger.
+func (s *Session) ViewEntityMount(vehicle, rider world.Entity) {
+	s.viewEntityMountHandles(vehicle.H(), rider.H())
+}
+
+func (s *Session) viewEntityMountHandles(vehicle, rider *world.EntityHandle) {
+	vehicleID, vehicleViewed := s.viewedEntityRuntimeID(vehicle)
+	riderID, riderViewed := s.viewedEntityRuntimeID(rider)
+	if !vehicleViewed || !riderViewed {
+		return
+	}
+	s.writePacket(&packet.SetActorLink{EntityLink: protocol.EntityLink{
+		RiddenEntityUniqueID: int64(vehicleID),
+		RiderEntityUniqueID:  int64(riderID),
+		Type:                 protocol.EntityLinkPassenger,
+		RiderInitiated:       true,
+	}})
+}
+
+func (s *Session) viewEntityMounts(e world.Entity) {
+	if rider, ok := e.(interface {
+		RidingVehicle() (*world.EntityHandle, bool)
+	}); ok {
+		if vehicle, riding := rider.RidingVehicle(); riding {
+			s.viewEntityMountHandles(vehicle, e.H())
+		}
+	}
+	if vehicle, ok := e.(interface {
+		RidingEntities() []*world.EntityHandle
+	}); ok {
+		for _, rider := range vehicle.RidingEntities() {
+			s.viewEntityMountHandles(e.H(), rider)
+		}
+	}
+}
+
+func (s *Session) viewedEntityRuntimeID(handle *world.EntityHandle) (uint64, bool) {
+	s.entityMutex.RLock()
+	id, ok := s.entityRuntimeIDs[handle]
+	s.entityMutex.RUnlock()
+	return id, ok
+}
+
+// ViewEntityDismount removes the passenger link between rider and vehicle.
+func (s *Session) ViewEntityDismount(vehicle, rider world.Entity) {
+	s.writePacket(&packet.SetActorLink{EntityLink: protocol.EntityLink{
+		RiddenEntityUniqueID: int64(s.entityRuntimeID(vehicle)),
+		RiderEntityUniqueID:  int64(s.entityRuntimeID(rider)),
+		Type:                 protocol.EntityLinkRemove,
+		Immediate:            true,
+		RiderInitiated:       true,
+	}})
 }
 
 // ViewEntityDisplacement ...

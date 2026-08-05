@@ -3,9 +3,11 @@ package server
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 	_ "unsafe"
 
@@ -271,6 +273,11 @@ type UserConfig struct {
 		// Required is a boolean to force the client to load the resource pack
 		// on join. If they do not accept, they'll have to leave the server.
 		Required bool
+		// CDN maps resource pack UUIDs to public HTTP(S) download URLs. Packs
+		// without an entry are transferred over RakNet unless CDNRequired is set.
+		CDN map[string]string `toml:"cdn"`
+		// CDNRequired makes startup fail unless every resource pack has a CDN URL.
+		CDNRequired bool `toml:"cdn-required"`
 	}
 }
 
@@ -298,9 +305,12 @@ func (uc UserConfig) Config(log *slog.Logger) (Config, error) {
 			return conf, fmt.Errorf("create world provider: %w", err)
 		}
 	}
-	conf.Resources, err = loadResources(uc.Resources.Folder)
+	conf.Resources, err = loadResources(uc.Resources.Folder, uc.Resources.CDN, uc.Resources.CDNRequired)
 	if err != nil {
 		return conf, fmt.Errorf("load resources: %w", err)
+	}
+	if uc.Resources.Required && len(conf.Resources) == 0 {
+		return conf, fmt.Errorf("load resources: resource packs are required, but %q is empty", uc.Resources.Folder)
 	}
 	if uc.Players.SaveData {
 		conf.PlayerProvider, err = playerdb.NewProvider(uc.Players.Folder)
@@ -313,21 +323,90 @@ func (uc UserConfig) Config(log *slog.Logger) (Config, error) {
 }
 
 // loadResources loads all resource packs found in a directory passed.
-func loadResources(dir string) ([]*resource.Pack, error) {
-	_ = os.MkdirAll(dir, 0777)
-
+func loadResources(dir string, cdnURLs map[string]string, cdnRequired bool) ([]*resource.Pack, error) {
 	resources, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read dir: %w", err)
 	}
-	packs := make([]*resource.Pack, len(resources))
-	for i, entry := range resources {
-		packs[i], err = resource.ReadPath(filepath.Join(dir, entry.Name()))
-		if err != nil {
-			return nil, fmt.Errorf("compile resource (%v): %w", entry.Name(), err)
+	cdn, err := validateResourceCDN(cdnURLs)
+	if err != nil {
+		return nil, err
+	}
+	packs := make([]*resource.Pack, 0, len(resources))
+	for _, entry := range resources {
+		name := entry.Name()
+		if len(name) != 0 && (name[0] == '.' || strings.HasSuffix(name, ".key")) {
+			continue
 		}
+		packPath := filepath.Join(dir, name)
+		localPack, err := resource.ReadPath(packPath)
+		if err != nil {
+			return nil, fmt.Errorf("compile resource (%v): %w", name, err)
+		}
+		pack := localPack
+		keyPath := packPath + ".key"
+		keyBytes, err := os.ReadFile(keyPath)
+		if err != nil && entry.IsDir() {
+			keyPath = filepath.Join(packPath, "key.txt")
+			keyBytes, err = os.ReadFile(keyPath)
+			if err != nil {
+				keyPath = filepath.Join(packPath, "key")
+				keyBytes, err = os.ReadFile(keyPath)
+			}
+		}
+		key := ""
+		if err == nil {
+			key = strings.TrimSpace(string(keyBytes))
+		}
+
+		id := localPack.UUID().String()
+		downloadURL, hasCDN := cdn[id]
+		if cdnRequired && !hasCDN {
+			return nil, fmt.Errorf("resource %q (%s) has no CDN URL", name, id)
+		}
+		if hasCDN {
+			pack, err = resource.ReadURL(downloadURL)
+			if err != nil {
+				return nil, fmt.Errorf("load CDN resource %q (%s): %w", name, downloadURL, err)
+			}
+			if pack.UUID() != localPack.UUID() || pack.Version() != localPack.Version() {
+				return nil, fmt.Errorf(
+					"CDN resource %q identity mismatch: local=%s_%s CDN=%s_%s",
+					name, localPack.UUID(), localPack.Version(), pack.UUID(), pack.Version(),
+				)
+			}
+			delete(cdn, id)
+		}
+		if key != "" {
+			pack = pack.WithContentKey(key)
+		}
+		packs = append(packs, pack)
+	}
+	for id := range cdn {
+		return nil, fmt.Errorf("CDN URL configured for unknown resource pack %s", id)
 	}
 	return packs, nil
+}
+
+func validateResourceCDN(configured map[string]string) (map[string]string, error) {
+	cdn := make(map[string]string, len(configured))
+	for rawID, rawURL := range configured {
+		id, err := uuid.Parse(rawID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid resource CDN UUID %q: %w", rawID, err)
+		}
+		downloadURL := strings.TrimSpace(rawURL)
+		parsed, err := url.Parse(downloadURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return nil, fmt.Errorf("invalid resource CDN URL for %s: %q", id, rawURL)
+		}
+		canonicalID := id.String()
+		if _, exists := cdn[canonicalID]; exists {
+			return nil, fmt.Errorf("duplicate resource CDN UUID %s", canonicalID)
+		}
+		cdn[canonicalID] = downloadURL
+	}
+	return cdn, nil
 }
 
 // loadGenerator loads a standard world.Generator for a world.Dimension. The
