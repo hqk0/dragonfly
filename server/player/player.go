@@ -327,6 +327,11 @@ func (p *Player) SendTip(a ...any) {
 	p.session().SendTip(format(a))
 }
 
+// SendActionBar sends text above the hotbar without changing title timings.
+func (p *Player) SendActionBar(a ...any) {
+	p.session().SendActionBarMessage(format(a))
+}
+
 // SendJukeboxPopup sends a formatted jukebox popup to the player. This popup is shown above the hotbar of the player.
 // The popup is close to the position of an action bar message and the text has no background.
 func (p *Player) SendJukeboxPopup(a ...any) {
@@ -2650,6 +2655,20 @@ func (p *Player) OpenBlockContainer(pos cube.Pos, tx *world.Tx) {
 		p.session().OpenBlockContainer(pos, tx)
 	}
 }
+
+// OpenInventory opens inv as a native chest container for the player.
+func (p *Player) OpenInventory(inv *inventory.Inventory) {
+	if p.session() != session.Nop {
+		pos := cube.PosFromVec3(p.Position()).Add(cube.Pos{0, 3, 0})
+		windowID := p.session().PrepareInventory(inv, pos, p.tx)
+		p.DoAfter(time.Second/20, func(_ *world.Tx, p *Player) {
+			p.session().OpenPreparedInventory(inv, windowID, pos)
+		})
+	}
+}
+
+// CloseInventory closes the currently open container.
+func (p *Player) CloseInventory() { p.session().CloseInventory(p.tx) }
 
 // HideEntity hides a world.Entity from the Player so that it can under no circumstance see it. Hidden entities can be
 // made visible again through a call to ShowEntity.

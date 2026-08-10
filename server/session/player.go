@@ -73,6 +73,13 @@ func (s *Session) closeCurrentContainer(tx *world.Tx, clientRequested bool) {
 
 	pos := *s.openedPos.Load()
 	b := tx.Block(pos)
+	if s.virtualContainer.Swap(false) {
+		s.ViewBlockUpdate(pos, b, 0)
+		if pair := s.virtualContainerPair.Swap(nil); pair != nil {
+			s.ViewBlockUpdate(*pair, tx.Block(*pair), 0)
+		}
+		return
+	}
 	if container, ok := b.(block.Container); ok {
 		container.RemoveViewer(s, tx, pos)
 	} else if enderChest, ok := b.(block.EnderChest); ok {

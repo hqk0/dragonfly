@@ -1278,6 +1278,52 @@ func (s *Session) OpenBlockContainer(pos cube.Pos, tx *world.Tx) {
 	})
 }
 
+// PrepareInventory shows the backing chest for a native container and returns its window ID.
+func (s *Session) PrepareInventory(inv *inventory.Inventory, pos cube.Pos, tx *world.Tx) byte {
+	s.closeCurrentContainer(tx, false)
+	chest := block.NewChest()
+	chest.CustomName = "メニュー"
+	s.ViewBlockUpdate(pos, chest, 0)
+	if inv.Size() > 27 {
+		pair := pos.Add(cube.Pos{1, 0, 0})
+		s.ViewBlockUpdate(pair, chest, 0)
+		for current, other := range map[cube.Pos]cube.Pos{pos: pair, pair: pos} {
+			data := chest.EncodeNBT()
+			data["x"], data["y"], data["z"] = int32(current.X()), int32(current.Y()), int32(current.Z())
+			data["pairx"], data["pairz"] = int32(other.X()), int32(other.Z())
+			s.writePacket(&packet.BlockActorData{
+				Position: protocol.BlockPos{int32(current.X()), int32(current.Y()), int32(current.Z())},
+				NBTData:  data,
+			})
+		}
+		s.virtualContainerPair.Store(&pair)
+	}
+	nextID := s.nextWindowID()
+	s.containerOpened.Store(true)
+	s.virtualContainer.Store(true)
+	s.openedWindow.Store(inv)
+	s.openedPos.Store(&pos)
+	s.openedContainerID.Store(protocol.ContainerTypeContainer)
+	return nextID
+}
+
+// OpenPreparedInventory opens a chest prepared by PrepareInventory.
+func (s *Session) OpenPreparedInventory(inv *inventory.Inventory, windowID byte, pos cube.Pos) {
+	if !s.containerOpened.Load() || s.openedWindow.Load() != inv || byte(s.openedWindowID.Load()) != windowID {
+		return
+	}
+	s.writePacket(&packet.ContainerOpen{
+		WindowID:                windowID,
+		ContainerType:           protocol.ContainerTypeContainer,
+		ContainerPosition:       protocol.BlockPos{int32(pos[0]), int32(pos[1]), int32(pos[2])},
+		ContainerEntityUniqueID: -1,
+	})
+	s.sendInv(inv, uint32(windowID))
+}
+
+// CloseInventory closes the currently open container.
+func (s *Session) CloseInventory(tx *world.Tx) { s.closeCurrentContainer(tx, false) }
+
 // openNormalContainer opens a normal container that can hold items in it server-side.
 func (s *Session) openNormalContainer(b block.Container, pos cube.Pos, tx *world.Tx) {
 	b.AddViewer(s, tx, pos) // Paired chests might update the block here.
