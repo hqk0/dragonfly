@@ -392,6 +392,9 @@ func (s *Session) ViewEntityArmour(e world.Entity) {
 	}
 
 	inv := armoured.Armour()
+	if inv == nil {
+		return
+	}
 
 	// Show the entity's armour
 	s.writePacket(&packet.MobArmourEquipment{
