@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/df-mc/dragonfly/server/internal/legacyprotocol"
 	"github.com/df-mc/dragonfly/server/session"
 	"github.com/sandertv/gophertunnel/minecraft"
 )
@@ -32,6 +33,7 @@ func (uc UserConfig) listenerFunc(conf Config) (Listener, error) {
 		TexturePacksRequired:   conf.ResourcesRequired,
 		Compression:            conf.Compression,
 		Allow:                  conf.Allower.Allow,
+		AcceptedProtocols:      []minecraft.Protocol{legacyprotocol.Protocol{}},
 	}
 	if conf.Log.Enabled(context.Background(), slog.LevelDebug) {
 		cfg.ErrorLog = conf.Log.With("net origin", "gophertunnel")
