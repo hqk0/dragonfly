@@ -2678,20 +2678,6 @@ func (p *Player) OpenBlockContainer(pos cube.Pos, tx *world.Tx) {
 	}
 }
 
-// OpenInventory opens inv as a native chest container for the player.
-func (p *Player) OpenInventory(inv *inventory.Inventory) {
-	if p.session() != session.Nop {
-		pos := cube.PosFromVec3(p.Position()).Add(cube.Pos{0, 3, 0})
-		windowID := p.session().PrepareInventory(inv, pos, p.tx)
-		p.DoAfter(time.Second/20, func(_ *world.Tx, p *Player) {
-			p.session().OpenPreparedInventory(inv, windowID, pos)
-		})
-	}
-}
-
-// CloseInventory closes the currently open container.
-func (p *Player) CloseInventory() { p.session().CloseInventory(p.tx) }
-
 // HideEntity hides a world.Entity from the Player so that it can under no circumstance see it. Hidden entities can be
 // made visible again through a call to ShowEntity.
 func (p *Player) HideEntity(e world.Entity) {
