@@ -34,15 +34,11 @@ func (Protocol) Packets(listener bool) packet.Pool {
 	if listener {
 		return packet.NewClientPool()
 	}
-	pool := packet.NewServerPool()
-	pool[packet.IDSetScore] = func() packet.Packet { return &setScore{} }
-	return pool
+	return packet.NewServerPool()
 }
 
 func (Protocol) ConvertToLatest(pk packet.Packet, _ *minecraft.Conn) []packet.Packet {
 	switch pk := pk.(type) {
-	case *setScore:
-		return []packet.Packet{setScoreToLatest(pk)}
 	case *packet.PlayerSkin:
 		converted := *pk
 		converted.Skin = convertSkin(pk.Skin, pieceTypeToLatest)
@@ -56,8 +52,6 @@ func (Protocol) ConvertToLatest(pk packet.Packet, _ *minecraft.Conn) []packet.Pa
 
 func (Protocol) ConvertFromLatest(pk packet.Packet, _ *minecraft.Conn) []packet.Packet {
 	switch pk := pk.(type) {
-	case *packet.SetScore:
-		return []packet.Packet{setScoreFromLatest(pk)}
 	case *packet.PlayerSkin:
 		converted := *pk
 		converted.Skin = convertSkin(pk.Skin, pieceTypeFromLatest)

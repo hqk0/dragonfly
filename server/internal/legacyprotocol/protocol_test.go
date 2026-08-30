@@ -1,7 +1,6 @@
 package legacyprotocol
 
 import (
-	"bytes"
 	"reflect"
 	"testing"
 
@@ -20,38 +19,8 @@ func TestProtocolMetadataAndPools(t *testing.T) {
 	if _, ok := p.Packets(true)[packet.IDPlayerSkin]; !ok {
 		t.Fatal("listener packet pool does not contain PlayerSkin")
 	}
-	if _, ok := p.Packets(false)[packet.IDSetScore]().(*setScore); !ok {
-		t.Fatal("dialer packet pool does not use the legacy SetScore representation")
-	}
-}
-
-func TestSetScoreUsesLegacyOptionalEncoding(t *testing.T) {
-	latest := &packet.SetScore{Entries: []protocol.ScoreboardEntry{{
-		EntryID:       12,
-		ObjectiveName: "trains",
-		IdentityType:  protocol.ScoreboardIdentityRemove,
-	}}}
-
-	converted := Protocol{}.ConvertFromLatest(latest, nil)
-	legacy, ok := converted[0].(*setScore)
-	if !ok {
-		t.Fatalf("converted packet type = %T, want *setScore", converted[0])
-	}
-	latestBytes := marshalPacket(latest)
-	legacyBytes := marshalPacket(legacy)
-	if len(latestBytes) != len(legacyBytes)+1 {
-		t.Fatalf("latest payload length = %d, legacy = %d; want one extra optional byte", len(latestBytes), len(legacyBytes))
-	}
-
-	decoded := &setScore{}
-	buf := bytes.NewBuffer(legacyBytes)
-	decoded.Marshal(protocol.NewReader(buf, 0, true))
-	if buf.Len() != 0 {
-		t.Fatalf("legacy SetScore left %d unread bytes", buf.Len())
-	}
-	roundTrip := setScoreToLatest(decoded)
-	if !reflect.DeepEqual(roundTrip, latest) {
-		t.Fatalf("SetScore round trip = %#v, want %#v", roundTrip, latest)
+	if _, ok := p.Packets(false)[packet.IDSetScore]().(*packet.SetScore); !ok {
+		t.Fatal("dialer packet pool does not use the current SetScore representation")
 	}
 }
 
@@ -123,12 +92,6 @@ func TestUnchangedPacketPassesThrough(t *testing.T) {
 	if got := (Protocol{}).ConvertFromLatest(original, nil)[0]; got != original {
 		t.Fatalf("ConvertFromLatest returned %p, want original %p", got, original)
 	}
-}
-
-func marshalPacket(pk packet.Packet) []byte {
-	buf := bytes.NewBuffer(nil)
-	pk.Marshal(protocol.NewWriter(buf, 0))
-	return buf.Bytes()
 }
 
 func assertPieceTypes(t *testing.T, pieces []protocol.PersonaPiece, want []uint32) {
