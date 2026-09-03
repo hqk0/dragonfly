@@ -2451,6 +2451,14 @@ func (p *Player) Move(deltaPos mgl64.Vec3, deltaYaw, deltaPitch float64) {
 	}
 }
 
+// ReceiveAuthInput forwards raw client controls to handlers that opt in to
+// AuthInputHandler. It is called by the network session on the world owner.
+func (p *Player) ReceiveAuthInput(input session.AuthInput) {
+	if handler, ok := p.Handler().(AuthInputHandler); ok {
+		handler.HandleAuthInput(NewEventContext(p.tx, p), input)
+	}
+}
+
 // Displace moves the player by a server-authoritative relative delta, clipped against block collision boxes.
 func (p *Player) Displace(deltaPos mgl64.Vec3) {
 	if p.Dead() || deltaPos.ApproxEqual(mgl64.Vec3{}) {

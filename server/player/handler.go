@@ -156,6 +156,14 @@ type Handler interface {
 	HandleDiagnostics(p *Player, d session.Diagnostics)
 }
 
+// AuthInputHandler is an optional extension implemented by handlers that need
+// access to raw forward/strafe controls, for example while a player is mounted
+// in a server-controlled vehicle. It is intentionally separate from Handler
+// to preserve compatibility with existing handlers.
+type AuthInputHandler interface {
+	HandleAuthInput(ctx *Context, input session.AuthInput)
+}
+
 // NopHandler implements the Handler interface but does not execute any code when an event is called. The
 // default Handler of players is set to NopHandler.
 // Users may embed NopHandler to avoid having to implement each method.

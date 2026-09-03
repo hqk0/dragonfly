@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/player/input"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/go-gl/mathgl/mgl64"
@@ -15,9 +16,30 @@ import (
 // PlayerAuthInputHandler handles the PlayerAuthInput packet.
 type PlayerAuthInputHandler struct{}
 
+// AuthInput contains the device-independent movement controls reported by a
+// client. RawMoveVector is used so mounted entities may consume the controls
+// even when normal player movement is locked.
+type AuthInput struct {
+	Forward, Strafe float64
+	InputMode       uint32
+	Tick            uint64
+}
+
+type authInputReceiver interface {
+	ReceiveAuthInput(AuthInput)
+}
+
 // Handle ...
 func (h PlayerAuthInputHandler) Handle(p packet.Packet, s *Session, tx *world.Tx, c Controllable) error {
 	pk := p.(*packet.PlayerAuthInput)
+	if receiver, ok := c.(authInputReceiver); ok {
+		receiver.ReceiveAuthInput(AuthInput{
+			Forward:   float64(pk.RawMoveVector[1]),
+			Strafe:    float64(pk.RawMoveVector[0]),
+			InputMode: pk.InputMode,
+			Tick:      pk.Tick,
+		})
+	}
 	if err := h.handleMovement(pk, s, c); err != nil {
 		return err
 	}
@@ -115,7 +137,7 @@ func (h PlayerAuthInputHandler) handleInputFlags(flags protocol.InputFlags, s *S
 	if flags.Load(packet.InputFlagStopSprinting) {
 		c.StopSprinting()
 	}
-	if sneaking := flags.Load(packet.InputFlagSneaking); sneaking != c.Sneaking() {
+	if sneaking := flags.Load(packet.InputFlagSneaking); !s.InputLocked(input.Sneak()) && sneaking != c.Sneaking() {
 		if sneaking {
 			c.StartSneaking()
 		} else {
@@ -134,7 +156,7 @@ func (h PlayerAuthInputHandler) handleInputFlags(flags protocol.InputFlags, s *S
 	if flags.Load(packet.InputFlagStopGliding) {
 		c.StopGliding()
 	}
-	if flags.Load(packet.InputFlagStartJumping) {
+	if flags.Load(packet.InputFlagStartJumping) && !s.InputLocked(input.Jump()) {
 		c.Jump()
 	}
 	if flags.Load(packet.InputFlagStartCrawling) {
