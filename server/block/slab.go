@@ -66,6 +66,9 @@ func (s Slab) Instrument() sound.Instrument {
 	if _, ok := s.Block.(BambooMosaic); ok {
 		return sound.Bass()
 	}
+	if _, ok := s.Block.(Wool); ok {
+		return sound.Guitar()
+	}
 	return sound.BassDrum()
 }
 
@@ -106,7 +109,7 @@ func (s Slab) LightDiffusionLevel() uint8 {
 }
 
 // CanRedstoneWireStepDown ...
-func (s Slab) CanRedstoneWireStepDown(cube.Pos, cube.Pos, *world.Tx) bool {
+func (s Slab) CanRedstoneWireStepDown(cube.Pos, cube.Pos, world.BlockSource) bool {
 	return s.Double
 }
 
