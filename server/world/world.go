@@ -332,6 +332,10 @@ type SetOpts struct {
 	// around the changed block. This is used by the redstone engine while
 	// applying its own block-state updates to avoid duplicate same-tick work.
 	DisableRedstoneUpdates bool
+	// KeepRedstonePower makes SetBlock keep the power the redstone engine
+	// holds for the position, for a change that does not affect the power the
+	// block receives or emits, such as the shape of redstone wire.
+	KeepRedstonePower bool
 }
 
 // setBlock writes a block to the position passed. If a chunk is not yet loaded
@@ -426,7 +430,7 @@ func (tx *Tx) setBlock(pos cube.Pos, b Block, opts *SetOpts) {
 		}
 	}
 
-	if redstoneAfterRelevant || (needOldBlock && isRedstoneRelevant(oldBlock)) {
+	if !opts.KeepRedstonePower && (redstoneAfterRelevant || (needOldBlock && isRedstoneRelevant(oldBlock))) {
 		w.redstone.forget(pos)
 	}
 
@@ -734,6 +738,16 @@ func (tx *Tx) skyLight(pos cube.Pos) uint8 {
 		return 15
 	}
 	return tx.chunk(chunkPosFromBlockPos(pos)).SkyLight(uint8(pos[0]), int16(pos[1]), uint8(pos[2]))
+}
+
+// blockLight returns the block light level at the position passed. Unlike light, this level is not
+// influenced by the light of the sky.
+func (tx *Tx) blockLight(pos cube.Pos) uint8 {
+	w := tx.World()
+	if pos[1] < w.ra[0] || pos[1] > w.ra[1] {
+		return 0
+	}
+	return tx.chunk(chunkPosFromBlockPos(pos)).BlockLight(uint8(pos[0]), int16(pos[1]), uint8(pos[2]))
 }
 
 // Time returns the current time of the world. The time is incremented every
@@ -1439,6 +1453,7 @@ func (w *World) addChunk(pos ChunkPos, c *chunk.Column) *Column {
 		e.markWorldReady(w)
 	}
 	w.calculateLight(pos)
+	w.deriveStates(pos)
 	return column
 }
 

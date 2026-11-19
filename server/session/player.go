@@ -545,7 +545,11 @@ func (s *Session) SendAbilities(c Controllable) {
 	if mode.AllowsInteraction() {
 		abilities |= protocol.AbilityDoorsAndSwitches | protocol.AbilityOpenContainers | protocol.AbilityAttackPlayers | protocol.AbilityAttackMobs
 	}
-	s.writePacket(&packet.UpdateAbilities{AbilityData: protocol.AbilityData{
+	if mode == world.GameModeSpectator {
+		abilities = protocol.AbilityBuild | protocol.AbilityMine | protocol.AbilityDoorsAndSwitches | protocol.AbilityOpenContainers |
+			protocol.AbilityAttackPlayers | protocol.AbilityAttackMobs
+	}
+	pk := &packet.UpdateAbilities{AbilityData: protocol.AbilityData{
 		EntityUniqueID:     selfEntityRuntimeID,
 		PlayerPermissions:  packet.PermissionLevelMember,
 		CommandPermissions: protocol.CommandPermissionLevelAny,
@@ -559,7 +563,21 @@ func (s *Session) SendAbilities(c Controllable) {
 				WalkSpeed:        protocol.AbilityBaseWalkSpeed,
 			},
 		},
-	}})
+	}}
+	if mode == world.GameModeSpectator {
+		pk.AbilityData.Layers = append([]protocol.AbilityLayer{spectatorAbilityLayer}, pk.AbilityData.Layers...)
+	}
+	s.writePacket(pk)
+}
+
+// spectatorAbilityLayer is the ability layer sent on top of the base layer of a player in spectator mode. It keeps
+// the player flying and passing through blocks, while preventing it from stopping flight or interacting with the world.
+var spectatorAbilityLayer = protocol.AbilityLayer{
+	Type: protocol.AbilityLayerTypeSpectator,
+	Abilities: protocol.AbilityBuild | protocol.AbilityMine | protocol.AbilityDoorsAndSwitches | protocol.AbilityOpenContainers |
+		protocol.AbilityAttackPlayers | protocol.AbilityAttackMobs | protocol.AbilityInvulnerable | protocol.AbilityFlying |
+		protocol.AbilityMayFly | protocol.AbilityInstantBuild | protocol.AbilityNoClip,
+	Values: protocol.AbilityInvulnerable | protocol.AbilityFlying | protocol.AbilityNoClip,
 }
 
 // SendHealth sends the health and max health to the player.
@@ -1135,7 +1153,6 @@ func protocolToSkin(sk protocol.Skin) (s skin.Skin, err error) {
 	s.Persona = sk.PersonaSkin
 	s.Pix = sk.SkinData
 	s.Model = sk.SkinGeometry
-	s.PlayFabID = sk.PlayFabID
 	s.FullID = sk.FullID
 
 	s.Cape = skin.NewCape(int(sk.CapeImageWidth), int(sk.CapeImageHeight))
@@ -1203,6 +1220,34 @@ func (s *Session) shapeAttachedEntityRuntimeID(shape debug.Shape) uint64 {
 	return s.handleRuntimeID(handle)
 }
 
+// debugShapeMaxDistance returns the distance beyond which the client stops drawing a debug shape. Every shape
+// carries one, but it is a field rather than a method, so each type has to be named.
+func debugShapeMaxDistance(shape debug.Shape) float64 {
+	switch shape := shape.(type) {
+	case *debug.Arrow:
+		return shape.MaxRenderDistance
+	case *debug.Box:
+		return shape.MaxRenderDistance
+	case *debug.Circle:
+		return shape.MaxRenderDistance
+	case *debug.Line:
+		return shape.MaxRenderDistance
+	case *debug.Sphere:
+		return shape.MaxRenderDistance
+	case *debug.Text:
+		return shape.MaxRenderDistance
+	case *debug.Cylinder:
+		return shape.MaxRenderDistance
+	case *debug.Pyramid:
+		return shape.MaxRenderDistance
+	case *debug.Ellipsoid:
+		return shape.MaxRenderDistance
+	case *debug.Cone:
+		return shape.MaxRenderDistance
+	}
+	return 0
+}
+
 // debugShapeToProtocol converts a debug shape to its protocol representation. It also provides defaults
 // for some fields such as colour, scale and other per-shape properties.
 func debugShapeToProtocol(shape debug.Shape, dim world.Dimension, attachedEntityID uint64) protocol.PrimitiveShape {
@@ -1213,6 +1258,9 @@ func debugShapeToProtocol(shape debug.Shape, dim world.Dimension, attachedEntity
 	}
 	if attachedEntityID > 0 {
 		ps.AttachedToEntityID = protocol.Option(int64(attachedEntityID))
+	}
+	if dist := debugShapeMaxDistance(shape); dist > 0 {
+		ps.MaxRenderDistance = protocol.Option(float32(dist))
 	}
 	white := color.RGBA{R: 255, G: 255, B: 255, A: 255}
 	switch shape := shape.(type) {
@@ -1324,6 +1372,9 @@ func debugShapeToProtocol(shape debug.Shape, dim world.Dimension, attachedEntity
 
 // gameTypeFromMode returns the game type ID from the game mode passed.
 func gameTypeFromMode(mode world.GameMode) int32 {
+	if mode == world.GameModeSpectator {
+		return packet.GameTypeSpectator
+	}
 	if mode.AllowsFlying() && mode.CreativeInventory() {
 		return packet.GameTypeCreative
 	}
