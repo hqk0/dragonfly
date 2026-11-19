@@ -67,7 +67,7 @@ type NonSuffocating interface {
 type RedstoneWireStepDowner interface {
 	// CanRedstoneWireStepDown returns whether redstone wire may provide power while travelling down the block at
 	// pos from the wire position passed.
-	CanRedstoneWireStepDown(pos, from cube.Pos, tx *world.Tx) bool
+	CanRedstoneWireStepDown(pos, from cube.Pos, src world.BlockSource) bool
 }
 
 // Replaceable represents a block that may be replaced by another block automatically. An example is grass,
@@ -149,6 +149,16 @@ func abs(x int) int {
 		return x
 	}
 	return -x
+}
+
+func sign(x int) int {
+	if x < 0 {
+		return -1
+	}
+	if x > 0 {
+		return 1
+	}
+	return 0
 }
 
 // replaceableWith checks if the block at the position passed is replaceable with the block passed.
@@ -258,6 +268,17 @@ func (g gravityAffected) fall(b world.Block, pos cube.Pos, tx *world.Tx) {
 		opts := world.EntitySpawnOpts{Position: pos.Vec3Centre()}
 		tx.AddEntity(tx.World().EntityRegistry().Config().FallingBlock(opts, b))
 	}
+}
+
+// Sleepable is an interface for blocks that a world.Sleeper can sleep in, such as Bed and StrawBed.
+type Sleepable interface {
+	// SleepingEntity returns the entity sleeping in the block, or nil if it is unoccupied.
+	SleepingEntity() *world.EntityHandle
+	// StartSleeping updates the block at pos for e having started sleeping in it.
+	StartSleeping(pos cube.Pos, tx *world.Tx, e *world.EntityHandle)
+	// StopSleeping updates the block at pos for its sleeper having woken up. A Bed is only freed up,
+	// while a StrawBed breaks.
+	StopSleeping(pos cube.Pos, tx *world.Tx)
 }
 
 // Flammable is an interface for blocks that can catch on fire.

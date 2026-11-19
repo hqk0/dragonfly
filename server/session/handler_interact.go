@@ -2,8 +2,6 @@ package session
 
 import (
 	"fmt"
-
-	"github.com/df-mc/dragonfly/server/player/input"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
@@ -19,9 +17,6 @@ func (h *InteractHandler) Handle(p packet.Packet, s *Session, _ *world.Tx, c Con
 
 	switch pk.ActionType {
 	case packet.InteractActionLeaveVehicle:
-		if s.InputLocked(input.Dismount()) {
-			return nil
-		}
 		if rider, ok := c.(interface{ Dismount() }); ok {
 			rider.Dismount()
 		}

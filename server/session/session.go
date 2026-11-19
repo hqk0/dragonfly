@@ -608,11 +608,18 @@ func (s *Session) registerHandlers() {
 		packet.IDRequestAbility:            &RequestAbilityHandler{},
 		packet.IDRequestChunkRadius:        &RequestChunkRadiusHandler{},
 		packet.IDRespawn:                   &RespawnHandler{},
+		packet.IDSetPlayerFurnaceOptions:   nil,
 		packet.IDSetPlayerInventoryOptions: nil,
 		packet.IDSubChunkRequest:           &SubChunkRequestHandler{},
 		packet.IDText:                      &TextHandler{},
 		packet.IDServerBoundLoadingScreen:  &ServerBoundLoadingScreenHandler{},
 		packet.IDServerBoundDiagnostics:    &ServerBoundDiagnosticsHandler{},
+		// Stonecutter crafting is resolved from the recipe network ID in the
+		// item stack request, so the selected recipe index is not needed.
+		packet.IDServerboundStonecutterSetRecipe: nil,
+		packet.IDServerboundCursorItemDrag:       nil,
+		packet.IDServerboundMatchmakingCancel:    nil,
+		packet.IDServerboundRegisterAudioContent: nil,
 	}
 }
 
